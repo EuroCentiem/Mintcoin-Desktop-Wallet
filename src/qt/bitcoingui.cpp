@@ -398,7 +398,8 @@ void BitcoinGUI::createToolBars()
     toolbar->addAction(overviewAction);
     toolbar->addAction(sendCoinsAction);
     toolbar->addAction(receiveCoinsAction);
-    toolbar->addAction(recurringSendAction);
+// 20180531 disable recurrent send until we figure out what we want to do with ith
+//    toolbar->addAction(recurringSendAction);
     toolbar->addAction(historyAction);
     toolbar->addAction(addressBookAction);
 
