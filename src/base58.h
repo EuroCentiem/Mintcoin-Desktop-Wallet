@@ -17,9 +17,11 @@
 
 #include <string>
 #include <vector>
+
 #include "bignum.h"
 #include "key.h"
 #include "script.h"
+#include "allocators.h"
 
 static const char* pszBase58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -44,13 +46,19 @@ inline std::string EncodeBase58(const unsigned char* pbegin, const unsigned char
     // Expected size increase from base58 conversion is approximately 137%
     // use 138% to be safe
     str.reserve((pend - pbegin) * 138 / 100 + 1);
-    CBigNum dv;
     CBigNum rem;
     while (bn > bn0)
     {
-        if (!BN_div(&dv, &rem, &bn, &bn58, pctx))
-            throw bignum_error("EncodeBase58 : BN_div failed");
-        bn = dv;
+        // Note that it is inefficient to perform the modulo operation
+        // and then the division immediately after this. In this case
+        // we are preparing a presentation format, which we do not
+        // expect to do in any time-critical situation. If it ever
+        // matters, then the CBigNum class can define a div() method
+        // that works similar to the standard C library div()
+        // function, which returns both the quotent and remainder of
+        // a division operation in a single call.
+        rem = bn % bn58;
+        bn /= bn58;
         unsigned int c = rem.getulong();
         str += pszBase58[c];
     }
@@ -95,8 +103,7 @@ inline bool DecodeBase58(const char* psz, std::vector<unsigned char>& vchRet)
             break;
         }
         bnChar.setulong(p1 - pszBase58);
-        if (!BN_mul(&bn, &bn, &bn58, pctx))
-            throw bignum_error("DecodeBase58 : BN_mul failed");
+        bn *= bn58;
         bn += bnChar;
     }
 
@@ -178,19 +185,13 @@ protected:
     unsigned char nVersion;
 
     // the actually encoded data
-    std::vector<unsigned char> vchData;
+    typedef std::vector<unsigned char, zero_after_free_allocator<unsigned char> > vector_uchar;
+    vector_uchar vchData;
 
     CBase58Data()
     {
         nVersion = 0;
         vchData.clear();
-    }
-
-    ~CBase58Data()
-    {
-        // zero the memory, as it may contain sensitive data
-        if (!vchData.empty())
-            memset(&vchData[0], 0, vchData.size());
     }
 
     void SetData(int nVersionIn, const void* pdata, size_t nSize)
@@ -457,4 +458,4 @@ public:
     }
 };
 
-#endif
+#endif // BITCOIN_BASE58_H

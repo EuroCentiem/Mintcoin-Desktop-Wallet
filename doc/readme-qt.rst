@@ -1,5 +1,5 @@
-Bitcoin-qt: Qt4 GUI for Bitcoin
-===============================
+MintCoin-Qt: Qt5 GUI for MintCoin
+=================================
 
 Build instructions
 ===================
@@ -7,33 +7,50 @@ Build instructions
 Debian
 -------
 
-First, make sure that the required packages for Qt4 development of your
-distribution are installed.
+These build instructions should work for Debian and derivative
+systems, such as Ubuntu and Linux Mint.
 
-On recent Ubuntu releases, the `libdb4.8++-dev` package is not in the default
-repositories. However it's in the bitcoin repository, which we can add
-with:
-
-    apt-add-repository ppa:bitcoin/bitcoin
-
-Then we need to make sure our build environment is up to date. For Debian and Ubuntu:
+We have some required packages. You can install these with `apt`:
 
 ::
 
-    apt-get install qt4-qmake libqt4-dev build-essential libboost-dev libboost-system-dev \
-        libboost-filesystem-dev libboost-program-options-dev libboost-thread-dev \
-        libssl-dev libdb4.8++-dev libminiupnpc-dev libminiupnpc8
+    apt install qt5-qmake qt5-default qttools5-dev-tools \
+        libboost-system-dev libboost-filesystem-dev \
+        libboost-program-options-dev libboost-thread-dev \
+        build-essential libboost-dev \
+        libssl-dev libdb5.3++-dev libminiupnpc-dev
 
-then execute the following:
+Next build the wallet:
 
 ::
 
     qmake
     make
 
-Alternatively, install Qt Creator and open the `bitcoin-qt.pro` file.
+An executable named `MintCoin-Qt` will be built.
 
-An executable named `bitcoin-qt` will be built.
+
+Fedora
+------
+
+These build instructions should work for Fedora and derivative
+systems, such as Red Hat Enterprise Linux and Oracle Linux.
+
+We have some required packages. You can install these with `dnf`:
+
+::
+
+    dnf install gcc-c++ boost-devel openssl-devel libdb-cxx-devel \
+        miniupnpc-devel qmake-qt5
+
+Next build the wallet:
+
+::
+
+    qmake-qt5
+    make
+
+An executable named `MintCoin-Qt` will be built.
 
 
 Windows
@@ -67,7 +84,7 @@ Mac OS X
 ::
 
 	sudo port selfupdate
-	sudo port install boost db48 miniupnpc
+	sudo port install boost db53 miniupnpc
 
 - Open the .pro file in Qt Creator and build as normal (cmd-B)
 
@@ -120,40 +137,8 @@ It can be downloaded from http://fukuchi.org/works/qrencode/index.html.en, or in
 flag to qmake to control this:
 
 +--------------+--------------------------------------------------------------------------+
-| USE_QRCODE=0 | (the default) No QRCode support - libarcode not required                 |
+| USE_QRCODE=0 | (the default) No QRCode support - libqrcode not required                 |
 +--------------+--------------------------------------------------------------------------+
 | USE_QRCODE=1 | QRCode support enabled                                                   |
 +--------------+--------------------------------------------------------------------------+
 
-
-Berkely DB version warning
-==========================
-
-A warning for people using the *static binary* version of Bitcoin on a Linux/UNIX-ish system (tl;dr: **Berkely DB databases are not forward compatible**).
-
-The static binary version of Bitcoin is linked against libdb4.8 (see also `this Debian issue`_).
-
-Now the nasty thing is that databases from 5.X are not compatible with 4.X.
-
-If the globally installed development package of Berkely DB installed on your system is 5.X, any source you
-build yourself will be linked against that. The first time you run with a 5.X version the database will be upgraded,
-and 4.X cannot open the new format. This means that you cannot go back to the old statically linked version without
-significant hassle!
-
-.. _`this Debian issue`: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=621425
-
-Ubuntu 11.10 warning
-====================
-
-Ubuntu 11.10 has a package called 'qt-at-spi' installed by default.  At the time of writing, having that package
-installed causes bitcoin-qt to crash intermittently.  The issue has been reported as `launchpad bug 857790`_, but
-isn't yet fixed.
-
-Until the bug is fixed, you can remove the qt-at-spi package to work around the problem, though this will presumably
-disable screen reader functionality for Qt apps:
-
-::
-
-    sudo apt-get remove qt-at-spi
-
-.. _`launchpad bug 857790`: https://bugs.launchpad.net/ubuntu/+source/qt-at-spi/+bug/857790

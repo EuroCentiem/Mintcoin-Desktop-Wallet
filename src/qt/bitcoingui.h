@@ -13,7 +13,6 @@ class WalletModel;
 class TransactionView;
 class OverviewPage;
 class AddressBookPage;
-class MerchantPage;
 class SendCoinsDialog;
 class SignVerifyMessageDialog;
 class Notificator;
@@ -51,12 +50,13 @@ public:
     */
     void setWalletModel(WalletModel *walletModel);
     RecurringSendPage *recurringSendPage;
-    
+
 protected:
     void changeEvent(QEvent *e);
     void closeEvent(QCloseEvent *event);
     void dragEnterEvent(QDragEnterEvent *event);
     void dropEvent(QDropEvent *event);
+    bool eventFilter(QObject *object, QEvent *event);
 
 private:
     ClientModel *clientModel;
@@ -69,7 +69,6 @@ private:
     AddressBookPage *addressBookPage;
     AddressBookPage *receiveCoinsPage;
     SendCoinsDialog *sendCoinsPage;
-    MerchantPage *merchantPage;
     SignVerifyMessageDialog *signVerifyMessageDialog;
 
     QLabel *labelEncryptionIcon;
@@ -85,7 +84,6 @@ private:
     QAction *quitAction;
     QAction *sendCoinsAction;
     QAction *addressBookAction;
-    QAction *merchantAction;
     QAction *recurringSendAction;
     QAction *signMessageAction;
     QAction *verifyMessageAction;
@@ -113,6 +111,7 @@ private:
     uint64 nMinMax;
     uint64 nWeight;
     uint64 nNetworkWeight;
+    uint nSecondsUntilNextMint;
 
     /** Create the main UI actions. */
     void createActions();
@@ -154,8 +153,6 @@ private slots:
     void gotoHistoryPage();
     /** Switch to address book page */
     void gotoAddressBookPage();
-    /** Switch to merchant page */
-    void gotoMerchantPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to recurring send page */
@@ -198,10 +195,11 @@ private slots:
 
     /** Show window if hidden, unminimize when minimized, rise when obscured or show if hidden and fToggleHidden is true */
     void showNormalIfMinimized(bool fToggleHidden = false);
-    /** simply calls showNormalIfMinimized(true) for use in SLOT() macro */
+    /** Simply calls showNormalIfMinimized(true) for use in SLOT() macro */
     void toggleHidden();
 
     /** Update info about minting */
+    void approximateTime(QString &text, uint64 nSeconds);
     void updateMintingIcon();
     /** Update minting weight info */
     void updateMintingWeights();

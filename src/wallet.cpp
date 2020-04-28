@@ -802,7 +802,7 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
         while (pindex)
         {
             CBlock block;
-            block.ReadFromDisk(pindex, true);
+            block.ReadFromDisk(pindex);
             BOOST_FOREACH(CTransaction& tx, block.vtx)
             {
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
@@ -845,7 +845,7 @@ void CWallet::ReacceptWalletTransactions()
                 // Update fSpent if a tx got spent somewhere else by a copy of wallet.dat
                 if (txindex.vSpent.size() != wtx.vout.size())
                 {
-                    printf("ERROR: ReacceptWalletTransactions() : txindex.vSpent.size() %"PRIszu" != wtx.vout.size() %"PRIszu"\n", txindex.vSpent.size(), wtx.vout.size());
+                    printf("ERROR: ReacceptWalletTransactions() : txindex.vSpent.size() %" PRIszu " != wtx.vout.size() %" PRIszu "\n", txindex.vSpent.size(), wtx.vout.size());
                     continue;
                 }
                 for (unsigned int i = 0; i < txindex.vSpent.size(); i++)
@@ -1388,7 +1388,7 @@ bool CWallet::CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& w
     return CreateTransaction(vecSend, wtxNew, reservekey, nFeeRet, coinControl);
 }
 
-bool CWallet::GetStakeWeight(const CKeyStore& keystore, uint64& nMinWeight, uint64& nMaxWeight, uint64& nWeight)
+bool CWallet::GetStakeWeight(const CKeyStore& keystore, uint64& nMinWeight, uint64& nMaxWeight, uint64& nWeight, unsigned int& nSecondsUntilNextMint)
 {
     // Choose coins to use
     int64 nBalance = GetBalance();
@@ -1409,6 +1409,11 @@ bool CWallet::GetStakeWeight(const CKeyStore& keystore, uint64& nMinWeight, uint
     if (setCoins.empty())
         return false;
 
+    // As we iterate through the coins, track the oldest one.
+    // This is useful for users to know how long until the next
+    // coin may be minted.
+    int64 nTimeOfOldestCoin = GetTime();
+
     CTxDB txdb("r");
     BOOST_FOREACH(PAIRTYPE(const CWalletTx*, unsigned int) pcoin, setCoins)
     {
@@ -1417,6 +1422,11 @@ bool CWallet::GetStakeWeight(const CKeyStore& keystore, uint64& nMinWeight, uint
             LOCK2(cs_main, cs_wallet);
             if (!txdb.ReadTxIndex(pcoin.first->GetHash(), txindex))
                 continue;
+        }
+
+        // If this coin is the oldest, remember it
+        if (pcoin.first->nTime < nTimeOfOldestCoin) {
+            nTimeOfOldestCoin = pcoin.first->nTime;
         }
 
         int64 nTimeWeight = GetWeight((int64)pcoin.first->nTime, (int64)GetTime());
@@ -1439,6 +1449,24 @@ bool CWallet::GetStakeWeight(const CKeyStore& keystore, uint64& nMinWeight, uint
         {
             nMaxWeight += bnCoinDayWeight.getuint64();
         }
+    }
+
+    // Figure out age of oldest coin (this is a bit tricky because if time
+    // changes then the time of the oldest coin may be in the future)
+    unsigned int nAgeOfOldestCoin;
+    int64 now = GetTime();
+    if (now >= nTimeOfOldestCoin) {
+        nAgeOfOldestCoin = now - nTimeOfOldestCoin;
+    } else {
+        nAgeOfOldestCoin = 0;
+    }
+
+    // Now figure out the seconds until the next mint (if we have mature
+    // coins then this is zero, not a negative number)
+    if (nAgeOfOldestCoin >= nStakeMinAge) {
+        nSecondsUntilNextMint = 0;
+    } else {
+        nSecondsUntilNextMint = nStakeMinAge - nAgeOfOldestCoin;
     }
 
     return true;
@@ -1497,7 +1525,7 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
         CBlock block;
 		{
 		    LOCK2(cs_main, cs_wallet);
-			if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos, false))
+            if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos))
 				continue;
 		}
 
@@ -1823,12 +1851,12 @@ void CWallet::PrintWallet(const CBlock& block)
         if (block.IsProofOfWork() && mapWallet.count(block.vtx[0].GetHash()))
         {
             CWalletTx& wtx = mapWallet[block.vtx[0].GetHash()];
-            printf("    mine:  %d  %d  %"PRI64d"", wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
+            printf("    mine:  %d  %d  %" PRI64d, wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
         }
         if (block.IsProofOfStake() && mapWallet.count(block.vtx[1].GetHash()))
         {
             CWalletTx& wtx = mapWallet[block.vtx[1].GetHash()];
-            printf("    stake: %d  %d  %"PRI64d"", wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
+            printf("    stake: %d  %d  %" PRI64d, wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
          }
 
     }
@@ -1891,7 +1919,7 @@ bool CWallet::NewKeyPool()
             walletdb.WritePool(nIndex, CKeyPool(GenerateNewKey()));
             setKeyPool.insert(nIndex);
         }
-        printf("CWallet::NewKeyPool wrote %"PRI64d" new keys\n", nKeys);
+        printf("CWallet::NewKeyPool wrote %" PRI64d " new keys\n", nKeys);
     }
     return true;
 }
@@ -1916,7 +1944,7 @@ bool CWallet::TopUpKeyPool()
             if (!walletdb.WritePool(nEnd, CKeyPool(GenerateNewKey())))
                 throw runtime_error("TopUpKeyPool() : writing generated key failed");
             setKeyPool.insert(nEnd);
-            printf("keypool added key %"PRI64d", size=%"PRIszu"\n", nEnd, setKeyPool.size());
+            printf("keypool added key %" PRI64d ", size=%" PRIszu "\n", nEnd, setKeyPool.size());
         }
     }
     return true;
@@ -1946,7 +1974,7 @@ void CWallet::ReserveKeyFromKeyPool(int64& nIndex, CKeyPool& keypool)
             throw runtime_error("ReserveKeyFromKeyPool() : unknown key in key pool");
         assert(keypool.vchPubKey.IsValid());
         if (fDebug && GetBoolArg("-printkeypool"))
-            printf("keypool reserve %"PRI64d"\n", nIndex);
+            printf("keypool reserve %" PRI64d "\n", nIndex);
     }
 }
 
@@ -1974,7 +2002,7 @@ void CWallet::KeepKey(int64 nIndex)
         walletdb.ErasePool(nIndex);
     }
     if(fDebug)
-        printf("keypool keep %"PRI64d"\n", nIndex);
+        printf("keypool keep %" PRI64d "\n", nIndex);
 }
 
 void CWallet::ReturnKey(int64 nIndex)
@@ -1985,7 +2013,7 @@ void CWallet::ReturnKey(int64 nIndex)
         setKeyPool.insert(nIndex);
     }
     if(fDebug)
-        printf("keypool return %"PRI64d"\n", nIndex);
+        printf("keypool return %" PRI64d "\n", nIndex);
 }
 
 bool CWallet::GetKeyFromPool(CPubKey& result, bool fAllowReuse)

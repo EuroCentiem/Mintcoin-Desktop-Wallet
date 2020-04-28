@@ -29,10 +29,9 @@ public:
         DisplayUnit,       // BitcoinUnits::Unit
         DisplayAddresses,  // bool
         DetachDatabases,   // bool
+        ThirdPartyTxUrls,       // QString
         Language,          // QString
         CoinControlFeatures, // bool
-        ShowShopDonate,    // bool
-        ShowOverviewNews,  // bool
         PasswordOnSend,    // bool
         recurringSendEntries,//string
         OptionIDRowCount,
@@ -53,9 +52,8 @@ public:
     bool getMinimizeOnClose();
     int getDisplayUnit();
     bool getDisplayAddresses();
+    QString getThirdPartyTxUrls() { return strThirdPartyTxUrls; }
     bool getCoinControlFeatures();
-    bool getShowShopDonate();
-    bool getShowOverviewNews();
     QString getRecurringSendEntries();
     bool getPasswordOnSend();
     void setRecurringSendEntries(QString recurringSendEntries);
@@ -66,12 +64,11 @@ public:
 
 private:
     int nDisplayUnit;
+    QString strThirdPartyTxUrls;
     bool bDisplayAddresses;
     bool fMinimizeToTray;
     bool fMinimizeOnClose;
     bool fCoinControlFeatures;
-    bool bShowShopDonate;
-    bool bShowOverviewNews;
     bool bPasswordOnSend;
     QString sRecurringSendEntries;
     QString language;

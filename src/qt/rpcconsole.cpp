@@ -16,13 +16,14 @@
 #include <QScrollBar>
 
 #include <openssl/crypto.h>
+#include <pthread.h>
+#include <db_cxx.h>
 
+// TODO: add a scrollback limit, as there is currently none
 // TODO: make it possible to filter out categories (esp debug messages when implemented)
 // TODO: receive errors and debug messages through ClientModel
 
-const int CONSOLE_SCROLLBACK = 50;
 const int CONSOLE_HISTORY = 50;
-
 const QSize ICON_SIZE(24, 24);
 
 const struct {
@@ -207,6 +208,7 @@ RPCConsole::RPCConsole(QWidget *parent) :
 
     // set OpenSSL version label
     ui->openSSLVersion->setText(SSLeay_version(SSLEAY_VERSION));
+    ui->berkeleyDBVersion->setText(DbEnv::version(0, 0, 0));
 
     startExecutor();
 
@@ -291,6 +293,8 @@ static QString categoryClass(int category)
 void RPCConsole::clear()
 {
     ui->messagesWidget->clear();
+    history.clear();
+    historyPtr = 0;
     ui->lineEdit->clear();
     ui->lineEdit->setFocus();
 

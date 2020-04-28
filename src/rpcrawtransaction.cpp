@@ -197,6 +197,8 @@ Value listunspent(const Array& params, bool fHelp)
         entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
         entry.push_back(Pair("amount",ValueFromAmount(nValue)));
         entry.push_back(Pair("confirmations",out.nDepth));
+        entry.push_back(Pair("txtime", DateTimeStrFormat(out.tx->nTime)));
+        entry.push_back(Pair("txtimereceived", DateTimeStrFormat(out.tx->nTimeReceived)));
         results.push_back(entry);
     }
 
@@ -470,7 +472,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
         {
             txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
         }
-        if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, true, 0))
+        if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, true, true, 0))
             fComplete = false;
     }
 
