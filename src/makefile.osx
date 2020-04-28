@@ -7,44 +7,46 @@
 # Originally by Laszlo Hanyecz (solar@heliacal.net)
 
 CXX=llvm-g++
-DEPSDIR=/opt/local
+BREWDEPSDIR=/usr/local/opt
 
 INCLUDEPATHS= \
+ -I"$(BREWDEPSDIR)/boost/include" \
+ -I"$(BREWDEPSDIR)/berkeley-db@4/include" \
+ -I"$(BREWDEPSDIR)/miniupnpc/include" \
+ -I"$(BREWDEPSDIR)/openssl/include" \
  -I"$(CURDIR)" \
- -I"$(CURDIR)"/obj \
- -I"$(DEPSDIR)/include" \
- -I"$(DEPSDIR)/include/db48"
+ -I"$(CURDIR)"/obj
 
 LIBPATHS= \
- -L"$(DEPSDIR)/lib" \
- -L"$(DEPSDIR)/lib/db48"
+ -L"$(BREWDEPSDIR)/boost/lib" \
+ -L"$(BREWDEPSDIR)/berkeley-db@4/lib" \
+ -L"$(BREWDEPSDIR)/miniupnpc/lib" \
+ -L"$(BREWDEPSDIR)/openssl/lib"
 
 USE_UPNP:=1
 USE_IPV6:=1
-USE_LEVELDB:=1
 
 LIBS= -dead_strip
 
 TESTDEFS = -DTEST_DATA_DIR=$(abspath test/data)
 
 ifdef STATIC
-# Build STATIC if you are redistributing the bitcoind binary
+# Build STATIC if you are redistributing the mintcoind binary
 TESTLIBS += \
- $(DEPSDIR)/lib/libboost_unit_test_framework-mt.a
+ $(BREWDEPSDIR)/boost/lib/libboost_unit_test_framework-mt.a
 LIBS += \
- $(DEPSDIR)/lib/db48/libdb_cxx-4.8.a \
- $(DEPSDIR)/lib/libboost_system-mt.a \
- $(DEPSDIR)/lib/libboost_filesystem-mt.a \
- $(DEPSDIR)/lib/libboost_program_options-mt.a \
- $(DEPSDIR)/lib/libboost_thread-mt.a \
- $(DEPSDIR)/lib/libssl.a \
- $(DEPSDIR)/lib/libcrypto.a \
- -lz
+ $(BREWDEPSDIR)/berkeley-db@4/lib/libdb_cxx.a \
+ $(BREWDEPSDIR)/boost/lib/libboost_system-mt.a \
+ $(BREWDEPSDIR)/boost/lib/libboost_filesystem-mt.a \
+ $(BREWDEPSDIR)/boost/lib/libboost_program_options-mt.a \
+ $(BREWDEPSDIR)/boost/lib/libboost_thread-mt.a \
+ $(BREWDEPSDIR)/openssl/lib/libssl.a \
+ $(BREWDEPSDIR)/openssl/lib/libcrypto.a 
 else
 TESTLIBS += \
  -lboost_unit_test_framework-mt
 LIBS += \
- -ldb_cxx-4.8 \
+ -ldb_cxx \
  -lboost_system-mt \
  -lboost_filesystem-mt \
  -lboost_program_options-mt \
@@ -61,13 +63,13 @@ ifdef RELEASE
 # Compile for maximum compatibility and smallest size.
 # This requires that dependencies are compiled
 # the same way.
-CFLAGS = -mmacosx-version-min=10.5 -arch x86_64 -O3 -msse2
+CFLAGS = -mmacosx-version-min=10.7 -arch x86_64 -O3 -msse2
 else
 CFLAGS = -g -msse2
 endif
 
 # ppc doesn't work because we don't support big-endian
-CFLAGS += -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
+CFLAGS += -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter -std=c++11 -stdlib=libc++ \
     $(DEBUGFLAGS) $(DEFS) $(INCLUDEPATHS)
 
 OBJS= \
@@ -109,7 +111,7 @@ endif
 ifneq (${USE_UPNP}, -)
 	DEFS += -DUSE_UPNP=$(USE_UPNP)
 ifdef STATIC
-	LIBS += $(DEPSDIR)/lib/libminiupnpc.a
+	LIBS += $(BREWDEPSDIR)/miniupnpc/lib/libminiupnpc.a
 else
 	LIBS += -lminiupnpc
 endif
@@ -121,21 +123,13 @@ endif
 
 all: mintcoind
 
-#
-# LevelDB support
-#
-ifdef USE_LEVELDB
 LIBS += $(CURDIR)/leveldb/libleveldb.a $(CURDIR)/leveldb/libmemenv.a
 DEFS += $(addprefix -I,$(CURDIR)/leveldb/include) -DUSE_LEVELDB
 DEFS += $(addprefix -I,$(CURDIR)/leveldb/helpers)
 OBJS += obj/txdb-leveldb.o
 leveldb/libleveldb.a:
-	@echo "Building LevelDB ..."; cd leveldb; make; cd ..
+	@echo "Building LevelDB ..." && cd leveldb && $(MAKE) CC=$(CC) CXX=$(CXX) OPT="$(CFLAGS)" libleveldb.a libmemenv.a && cd ..
 obj/txdb-leveldb.o: leveldb/libleveldb.a
-else
-OBJS += obj/txdb-bdb.o
-endif
-
 
 test check: test_mintcoin FORCE
 	./test_mintcoin

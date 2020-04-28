@@ -48,10 +48,9 @@ void OptionsModel::Init()
     fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
     nTransactionFee = settings.value("nTransactionFee").toLongLong();
     language = settings.value("language", "").toString();
-    bShowShopDonate = settings.value("bShowShopDonate", true).toBool();
-    bShowOverviewNews = settings.value("bShowOverviewNews", true).toBool();
     sRecurringSendEntries = settings.value("sRecurringSendEntries","").toString();
     bPasswordOnSend = settings.value("bPasswordOnSend", false).toBool();
+    strThirdPartyTxUrls = settings.value("strThirdPartyTxUrls", "").toString();
 
 
     // These are shared with core Bitcoin; we want
@@ -174,14 +173,12 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return QVariant(bDisplayAddresses);
         case DetachDatabases:
             return QVariant(bitdb.GetDetach());
+        case ThirdPartyTxUrls:
+        	return strThirdPartyTxUrls;
         case Language:
             return settings.value("language", "");
         case CoinControlFeatures:
             return QVariant(fCoinControlFeatures);
-        case ShowShopDonate:
-            return QVariant(bShowShopDonate);
-        case ShowOverviewNews:
-            return QVariant(bShowOverviewNews);
         case PasswordOnSend:
             return QVariant(bPasswordOnSend);
         case recurringSendEntries:
@@ -272,6 +269,12 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             settings.setValue("detachDB", fDetachDB);
             }
             break;
+        case ThirdPartyTxUrls:
+	    if (strThirdPartyTxUrls != value.toString()) {
+	    	strThirdPartyTxUrls = value.toString();
+		settings.setValue("strThirdPartyTxUrls", strThirdPartyTxUrls);
+	    }
+            break;
         case Language:
             settings.setValue("language", value);
             break;
@@ -281,18 +284,11 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             emit coinControlFeaturesChanged(fCoinControlFeatures);
             }
             break;
-        case ShowShopDonate: {
-            bShowShopDonate = value.toBool();
-            settings.setValue("bShowShopDonate", bShowShopDonate);
-            }
-        case ShowOverviewNews: {
-            bShowOverviewNews = value.toBool();
-            settings.setValue("bShowOverviewNews", bShowOverviewNews);
-            }
         case recurringSendEntries: {
             sRecurringSendEntries = value.toString();
             settings.setValue("sRecurringSendEntries", sRecurringSendEntries);
             }
+            break;
         case PasswordOnSend:
             bPasswordOnSend = value.toBool();
             settings.setValue("bPasswordOnSend",bPasswordOnSend);
@@ -314,16 +310,6 @@ qint64 OptionsModel::getTransactionFee()
 bool OptionsModel::getCoinControlFeatures()
 {
      return fCoinControlFeatures;
-}
-
-bool OptionsModel::getShowShopDonate()
-{
-     return bShowShopDonate;
-}
-
-bool OptionsModel::getShowOverviewNews()
-{
-     return bShowOverviewNews;
 }
 
 bool OptionsModel::getMinimizeToTray()

@@ -6,8 +6,25 @@
 
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
+#include <openssl/opensslv.h>
 
 #include "key.h"
+
+/*
+OpenSSL changed the structure for ECDSA signatures to be more
+abstract between version 1.0.x and 1.1.x. This means that you
+can no longer access those fields directly. The values that we
+care about can be get/set with the ECDSA_SIG_get0() and
+ECDSA_SIG_set0() functions. These are not available on earlier
+versions than 1.1.0, so we need to provide these for systems
+with older OpenSSL.
+
+The OPENSSL_VERSION_NUMBER is defined in <openssl/opensslv.h>.
+ */
+#if OPENSSL_VERSION_NUMBER < 0x10010000
+#define ECDSA_SIG_get0(sig, sig_r, sig_s) (*sig_r = (sig)->r, *sig_s = (sig)->s)
+#define ECDSA_SIG_set0(sig, sig_r, sig_s) ((sig)->r = sig_r, (sig)->s = sig_s)
+#endif /* OPENSSL_VERSION_NUMBER < 0x10010000 */
 
 // Generate a private key from just the secret parameter
 int EC_KEY_regenerate_key(EC_KEY *eckey, BIGNUM *priv_key)
@@ -49,7 +66,7 @@ err:
 // Perform ECDSA key recovery (see SEC1 4.1.6) for curves over (mod p)-fields
 // recid selects which key is recovered
 // if check is non-zero, additional checks are performed
-int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned char *msg, int msglen, int recid, int check)
+int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, const ECDSA_SIG *ecsig, const unsigned char *msg, int msglen, int recid, int check)
 {
     if (!eckey) return 0;
 
@@ -70,6 +87,9 @@ int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned ch
     int n = 0;
     int i = recid / 2;
 
+    const BIGNUM *sig_r, *sig_s;
+    ECDSA_SIG_get0(ecsig, &sig_r, &sig_s);
+
     const EC_GROUP *group = EC_KEY_get0_group(eckey);
     if ((ctx = BN_CTX_new()) == NULL) { ret = -1; goto err; }
     BN_CTX_start(ctx);
@@ -78,7 +98,7 @@ int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned ch
     x = BN_CTX_get(ctx);
     if (!BN_copy(x, order)) { ret=-1; goto err; }
     if (!BN_mul_word(x, i)) { ret=-1; goto err; }
-    if (!BN_add(x, x, ecsig->r)) { ret=-1; goto err; }
+    if (!BN_add(x, x, sig_r)) { ret=-1; goto err; }
     field = BN_CTX_get(ctx);
     if (!EC_GROUP_get_curve_GFp(group, field, NULL, NULL, ctx)) { ret=-2; goto err; }
     if (BN_cmp(x, field) >= 0) { ret=0; goto err; }
@@ -99,9 +119,9 @@ int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned ch
     if (!BN_zero(zero)) { ret=-1; goto err; }
     if (!BN_mod_sub(e, zero, e, order, ctx)) { ret=-1; goto err; }
     rr = BN_CTX_get(ctx);
-    if (!BN_mod_inverse(rr, ecsig->r, order, ctx)) { ret=-1; goto err; }
+    if (!BN_mod_inverse(rr, sig_r, order, ctx)) { ret=-1; goto err; }
     sor = BN_CTX_get(ctx);
-    if (!BN_mod_mul(sor, ecsig->s, rr, order, ctx)) { ret=-1; goto err; }
+    if (!BN_mod_mul(sor, sig_s, rr, order, ctx)) { ret=-1; goto err; }
     eor = BN_CTX_get(ctx);
     if (!BN_mod_mul(eor, e, rr, order, ctx)) { ret=-1; goto err; }
     if (!EC_POINT_mul(group, Q, eor, R, sor, ctx)) { ret=-2; goto err; }
@@ -308,8 +328,10 @@ bool CKey::SignCompact(uint256 hash, std::vector<unsigned char>& vchSig)
         return false;
     vchSig.clear();
     vchSig.resize(65,0);
-    int nBitsR = BN_num_bits(sig->r);
-    int nBitsS = BN_num_bits(sig->s);
+    const BIGNUM *sig_r, *sig_s;
+    ECDSA_SIG_get0(sig, &sig_r, &sig_s);
+    int nBitsR = BN_num_bits(sig_r);
+    int nBitsS = BN_num_bits(sig_s);
     if (nBitsR <= 256 && nBitsS <= 256)
     {
         int nRecId = -1;
@@ -328,11 +350,14 @@ bool CKey::SignCompact(uint256 hash, std::vector<unsigned char>& vchSig)
         }
 
         if (nRecId == -1)
+        {
+            ECDSA_SIG_free(sig);
             throw key_error("CKey::SignCompact() : unable to construct recoverable key");
+        }
 
         vchSig[0] = nRecId+27+(fCompressedPubKey ? 4 : 0);
-        BN_bn2bin(sig->r,&vchSig[33-(nBitsR+7)/8]);
-        BN_bn2bin(sig->s,&vchSig[65-(nBitsS+7)/8]);
+        BN_bn2bin(sig_r,&vchSig[33-(nBitsR+7)/8]);
+        BN_bn2bin(sig_s,&vchSig[65-(nBitsS+7)/8]);
         fOk = true;
     }
     ECDSA_SIG_free(sig);
@@ -351,8 +376,15 @@ bool CKey::SetCompactSignature(uint256 hash, const std::vector<unsigned char>& v
     if (nV<27 || nV>=35)
         return false;
     ECDSA_SIG *sig = ECDSA_SIG_new();
-    BN_bin2bn(&vchSig[1],32,sig->r);
-    BN_bin2bn(&vchSig[33],32,sig->s);
+    BIGNUM *sig_r = BN_bin2bn(&vchSig[1],32,NULL);
+    BIGNUM *sig_s = BN_bin2bn(&vchSig[33],32,NULL);
+    if (!ECDSA_SIG_set0(sig, sig_r, sig_s))
+    {
+        ECDSA_SIG_free(sig);
+        BN_free(sig_r);
+        BN_free(sig_s);
+	return false;
+    }
 
     EC_KEY_free(pkey);
     pkey = EC_KEY_new_by_curve_name(NID_secp256k1);
@@ -367,16 +399,60 @@ bool CKey::SetCompactSignature(uint256 hash, const std::vector<unsigned char>& v
         ECDSA_SIG_free(sig);
         return true;
     }
+    ECDSA_SIG_free(sig);
     return false;
 }
 
-bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
+bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSigParam)
 {
-    // -1 = error, 0 = bad sig, 1 = good
-    if (ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], vchSig.size(), pkey) != 1)
+    // Prevent the problem described here: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-July/009697.html
+    // by removing the extra length bytes
+    std::vector<unsigned char> vchSig(vchSigParam.begin(), vchSigParam.end());
+    if (int(vchSig.size()) > 1 && vchSig[1] & 0x80)
+    {
+        unsigned char nLengthBytes = vchSig[1] & 0x7f;
+ 	
+    	if (int(vchSig.size()) < 2 + nLengthBytes)
+            return false;
+ 
+        if (nLengthBytes > 4)
+        {
+            unsigned char nExtraBytes = nLengthBytes - 4;
+            for (unsigned char i = 0; i < nExtraBytes; i++)
+                if (vchSig[2 + i])
+                    return false;
+            vchSig.erase(vchSig.begin() + 2, vchSig.begin() + 2 + nExtraBytes);
+            vchSig[1] = 0x80 | (nLengthBytes - nExtraBytes);
+        }
+    }
+    if (vchSig.empty())
         return false;
 
-    return true;
+    // New versions of OpenSSL will reject non-canonical DER signatures. de/re-serialize first.
+    unsigned char *norm_der = NULL;
+    ECDSA_SIG *norm_sig = ECDSA_SIG_new();
+    const unsigned char* sigptr = &vchSig[0];
+    assert(norm_sig);
+    if (d2i_ECDSA_SIG(&norm_sig, &sigptr, vchSig.size()) == NULL)
+    {
+        /* As of OpenSSL 1.0.0p d2i_ECDSA_SIG frees and nulls the pointer on
+         * error. But OpenSSL's own use of this function redundantly frees the
+         * result. As ECDSA_SIG_free(NULL) is a no-op, and in the absence of a
+         * clear contract for the function behaving the same way is more
+         * conservative.
+         */
+        ECDSA_SIG_free(norm_sig);
+        return false;
+    }
+    int derlen = i2d_ECDSA_SIG(norm_sig, &norm_der);
+    ECDSA_SIG_free(norm_sig);
+    if (derlen <= 0)
+        return false;
+ 
+    // -1 = error, 0 = bad sig, 1 = good
+    bool ret = ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), norm_der, derlen, pkey) == 1;
+    OPENSSL_free(norm_der);
+    return ret;
 }
 
 bool CKey::VerifyCompact(uint256 hash, const std::vector<unsigned char>& vchSig)

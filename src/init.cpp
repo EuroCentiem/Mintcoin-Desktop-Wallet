@@ -146,10 +146,10 @@ bool AppInit(int argc, char* argv[])
             // First part of help message is specific to bitcoind / RPC client
             std::string strUsage = _("MintCoin version") + " " + FormatFullVersion() + "\n\n" +
                 _("Usage:") + "\n" +
-                  "  MintCoind [options]                     " + "\n" +
-                  "  MintCoind [options] <command> [params]  " + _("Send command to -server or MintCoind") + "\n" +
-                  "  MintCoind [options] help                " + _("List commands") + "\n" +
-                  "  MintCoind [options] help <command>      " + _("Get help for a command") + "\n";
+                  "  mintcoind [options]                     " + "\n" +
+                  "  mintcoind [options] <command> [params]  " + _("Send command to -server or MintCoind") + "\n" +
+                  "  mintcoind [options] help                " + _("List commands") + "\n" +
+                  "  mintcoind [options] help <command>      " + _("Get help for a command") + "\n";
 
             strUsage += "\n" + HelpMessage();
 
@@ -458,9 +458,22 @@ bool AppInit2()
     if (!lock.try_lock())
         return InitError(strprintf(_("Cannot obtain a lock on data directory %s.  MintCoin is probably already running."), strDataDir.c_str()));
 
-#if !defined(WIN32) && !defined(QT_GUI)
+    if (GetBoolArg("-shrinkdebugfile", !fDebug))
+        ShrinkDebugFile();
+    printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+    printf("MintCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+    printf("Using OpenSSL version %s\n", SSLeay_version(SSLEAY_VERSION));
+    printf("Using BerkeleyDB version %s\n", DbEnv::version(0, 0, 0));
+    if (!fLogTimestamps)
+        printf("Startup time: %s\n", DateTimeStrFormat(GetTime()).c_str());
+    printf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
+    printf("Used data directory %s\n", strDataDir.c_str());
+    std::ostringstream strErrors;
+
     if (fDaemon)
     {
+        fprintf(stdout, "MintCoin server starting\n");
+#if !defined(WIN32) && !defined(QT_GUI)
         // Daemonize
         pid_t pid = fork();
         if (pid < 0)
@@ -476,23 +489,12 @@ bool AppInit2()
 
         pid_t sid = setsid();
         if (sid < 0)
+        {
             fprintf(stderr, "Error: setsid() returned %d errno %d\n", sid, errno);
-    }
+        }
 #endif
+    }
 
-    if (GetBoolArg("-shrinkdebugfile", !fDebug))
-        ShrinkDebugFile();
-    printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-    printf("MintCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
-    printf("Using OpenSSL version %s\n", SSLeay_version(SSLEAY_VERSION));
-    if (!fLogTimestamps)
-        printf("Startup time: %s\n", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
-    printf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
-    printf("Used data directory %s\n", strDataDir.c_str());
-    std::ostringstream strErrors;
-
-    if (fDaemon)
-        fprintf(stdout, "MintCoin server starting\n");
 
     int64 nStart;
 
@@ -687,7 +689,7 @@ bool AppInit2()
         printf("Shutdown requested. Exiting.\n");
         return false;
     }
-    printf(" block index %15"PRI64d"ms\n", GetTimeMillis() - nStart);
+    printf(" block index %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     if (GetBoolArg("-printblockindex") || GetBoolArg("-printblocktree"))
     {
@@ -730,7 +732,7 @@ bool AppInit2()
         msgBox.setInformativeText(("Would you like to import one or create a new wallet?"));
 
         QPushButton* import = msgBox.addButton(("Import Wallet"), QMessageBox::ActionRole);
-        QPushButton* newWallet = msgBox.addButton("Create new wallet", QMessageBox::RejectRole);
+        msgBox.addButton("Create new wallet", QMessageBox::RejectRole);
         msgBox.exec();
 
         if(msgBox.clickedButton()== import)
@@ -806,7 +808,7 @@ bool AppInit2()
     }
 
     printf("%s", strErrors.str().c_str());
-    printf(" wallet      %15"PRI64d"ms\n", GetTimeMillis() - nStart);
+    printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     RegisterWallet(pwalletMain);
 
@@ -826,7 +828,7 @@ bool AppInit2()
         printf("Rescanning last %i blocks (from block %i)...\n", pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
         nStart = GetTimeMillis();
         pwalletMain->ScanForWalletTransactions(pindexRescan, true);
-        printf(" rescan      %15"PRI64d"ms\n", GetTimeMillis() - nStart);
+        printf(" rescan      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
     }
 
     // ********************************************************* Step 9: import blocks
@@ -868,7 +870,7 @@ bool AppInit2()
             printf("Invalid or missing peers.dat; recreating\n");
     }
 
-    printf("Loaded %i addresses from peers.dat  %"PRI64d"ms\n",
+    printf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",
            addrman.size(), GetTimeMillis() - nStart);
 
     // ********************************************************* Step 11: start node
@@ -879,11 +881,11 @@ bool AppInit2()
     RandAddSeedPerfmon();
 
     //// debug print
-    printf("mapBlockIndex.size() = %"PRIszu"\n",   mapBlockIndex.size());
+    printf("mapBlockIndex.size() = %" PRIszu "\n",   mapBlockIndex.size());
     printf("nBestHeight = %d\n",            nBestHeight);
-    printf("setKeyPool.size() = %"PRIszu"\n",      pwalletMain->setKeyPool.size());
-    printf("mapWallet.size() = %"PRIszu"\n",       pwalletMain->mapWallet.size());
-    printf("mapAddressBook.size() = %"PRIszu"\n",  pwalletMain->mapAddressBook.size());
+    printf("setKeyPool.size() = %" PRIszu "\n",      pwalletMain->setKeyPool.size());
+    printf("mapWallet.size() = %" PRIszu "\n",       pwalletMain->mapWallet.size());
+    printf("mapAddressBook.size() = %" PRIszu "\n",  pwalletMain->mapAddressBook.size());
 
     if (!NewThread(StartNode, NULL))
         InitError(_("Error: could not start node"));

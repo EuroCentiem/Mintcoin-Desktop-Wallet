@@ -7,7 +7,6 @@
 #include "bitcoingui.h"
 #include "transactiontablemodel.h"
 #include "addressbookpage.h"
-#include "merchantpage.h"
 #include "recurringsendpage.h"
 #include "sendcoinsdialog.h"
 #include "signverifymessagedialog.h"
@@ -121,8 +120,6 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
 
     sendCoinsPage = new SendCoinsDialog(this);
 
-    merchantPage = new MerchantPage(this);
-
     recurringSendPage = new RecurringSendPage(this);
 
     signVerifyMessageDialog = new SignVerifyMessageDialog(this);
@@ -134,7 +131,6 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     centralWidget->addWidget(receiveCoinsPage);
     centralWidget->addWidget(sendCoinsPage);
     centralWidget->addWidget(recurringSendPage);
-    centralWidget->addWidget(merchantPage);
     setCentralWidget(centralWidget);
 
     // Create status bar
@@ -172,9 +168,13 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     QTimer *timerMintingWeights = new QTimer(labelMintingIcon);
     timerMintingWeights->start(30 * 1000);
     connect(timerMintingWeights, SIGNAL(timeout()), this, SLOT(updateMintingWeights()));
+
     // Set initial values for user and network weights
-    nWeight=0;
+    nWeight = 0;
     nNetworkWeight = 0;
+
+    // Set initial value for seconds until next mint
+    nSecondsUntilNextMint = 0;
 
     // Progress bar and label for blocks download
     progressBarLabel = new QLabel();
@@ -197,12 +197,12 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     statusBar()->addPermanentWidget(frameBlocks);
 
     syncIconMovie = new QMovie(":/movies/update_spinner", "mng", this);
-    qApp->setStyleSheet("background-color: #effbef;");
     //load stylesheet if present
     QFile File("style/stylesheet.qss");
-    File.open(QFile::ReadOnly);
-    QString StyleSheet = QLatin1String(File.readAll());
-    qApp->setStyleSheet(StyleSheet);
+    if (File.open(QFile::ReadOnly)) {
+        QString StyleSheet = QLatin1String(File.readAll());
+        qApp->setStyleSheet(StyleSheet);
+    }
 
     // Clicking on a transaction on the overview page simply sends you to transaction history page
     connect(overviewPage, SIGNAL(transactionClicked(QModelIndex)), this, SLOT(gotoHistoryPage()));
@@ -218,6 +218,9 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     connect(addressBookPage, SIGNAL(verifyMessage(QString)), this, SLOT(gotoVerifyMessageTab(QString)));
     // Clicking on "Sign Message" in the receive coins page sends you to the sign message tab
     connect(receiveCoinsPage, SIGNAL(signMessage(QString)), this, SLOT(gotoSignMessageTab(QString)));
+
+    // Install event filter to be able to catch status tip events (QEvent::StatusTip)
+    this->installEventFilter(this);
 
     gotoOverviewPage();
     statusBar()->showMessage(tr("Remember to make an external backup of your wallet"));
@@ -243,47 +246,46 @@ void BitcoinGUI::createActions()
     QActionGroup *tabGroup = new QActionGroup(this);
 
     overviewAction = new QAction(QIcon(":/icons/overview"), tr("&Overview"), this);
-    overviewAction->setToolTip(tr("Show general overview of wallet"));
+    overviewAction->setStatusTip(tr("Show general overview of wallet"));
+    overviewAction->setToolTip(overviewAction->statusTip());
     overviewAction->setCheckable(true);
     overviewAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_1));
     tabGroup->addAction(overviewAction);
 
     sendCoinsAction = new QAction(QIcon(":/icons/send"), tr("&Send coins"), this);
-    sendCoinsAction->setToolTip(tr("Send coins to a MintCoin address"));
+    sendCoinsAction->setStatusTip(tr("Send coins to a MintCoin address"));
+    sendCoinsAction->setToolTip(sendCoinsAction->statusTip());
     sendCoinsAction->setCheckable(true);
     sendCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_2));
     tabGroup->addAction(sendCoinsAction);
 
-
     receiveCoinsAction = new QAction(QIcon(":/icons/receiving_addresses"), tr("&Receive coins"), this);
-    receiveCoinsAction->setToolTip(tr("Show the list of addresses for receiving payments"));
+    receiveCoinsAction->setStatusTip(tr("Show the list of addresses for receiving payments"));
+    receiveCoinsAction->setToolTip(receiveCoinsAction->statusTip());
     receiveCoinsAction->setCheckable(true);
     receiveCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_3));
     tabGroup->addAction(receiveCoinsAction);
 
     recurringSendAction = new QAction(QIcon(":/icons/send"), tr("&RecurringSend"), this);
-    recurringSendAction->setToolTip(tr("Add recurring send from Send coins tab"));
+    recurringSendAction->setStatusTip(tr("Add recurring send from Send coins tab"));
+    recurringSendAction->setToolTip(recurringSendAction->statusTip());
     recurringSendAction->setCheckable(true);
     recurringSendAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_4));
     tabGroup->addAction(recurringSendAction);
 
     historyAction = new QAction(QIcon(":/icons/history"), tr("&Transactions"), this);
-    historyAction->setToolTip(tr("Browse transaction history"));
+    historyAction->setStatusTip(tr("Browse transaction history"));
+    historyAction->setToolTip(historyAction->statusTip());
     historyAction->setCheckable(true);
     historyAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
     tabGroup->addAction(historyAction);
 
     addressBookAction = new QAction(QIcon(":/icons/address-book"), tr("&Address Book"), this);
-    addressBookAction->setToolTip(tr("Edit the list of stored addresses and labels"));
+    addressBookAction->setStatusTip(tr("Edit the list of stored addresses and labels"));
+    addressBookAction->setToolTip(addressBookAction->statusTip());
     addressBookAction->setCheckable(true);
     addressBookAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
     tabGroup->addAction(addressBookAction);
-
-    merchantAction = new QAction(QIcon(":/icons/address-book"), tr("&Shop/Donate"), this);
-    merchantAction->setToolTip(tr("Merchants"));
-    merchantAction->setCheckable(true);
-    merchantAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_7));
-    tabGroup->addAction(merchantAction);
 
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(gotoOverviewPage()));
@@ -297,42 +299,44 @@ void BitcoinGUI::createActions()
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(gotoAddressBookPage()));
     connect(recurringSendAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(recurringSendAction, SIGNAL(triggered()), this, SLOT(gotoRecurringSendPage()));
-    connect(merchantAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
-    connect(merchantAction, SIGNAL(triggered()), this, SLOT(gotoMerchantPage()));
 
     quitAction = new QAction(QIcon(":/icons/quit"), tr("E&xit"), this);
-    quitAction->setToolTip(tr("Quit application"));
+    quitAction->setStatusTip(tr("Quit application"));
     quitAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Q));
     quitAction->setMenuRole(QAction::QuitRole);
     checkWalletAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Run Check Wallet"), this);
-    checkWalletAction->setToolTip(tr("Run a scan to fix transactions"));
+    checkWalletAction->setStatusTip(tr("Run a scan to fix transactions"));
     aboutAction = new QAction(QIcon(":/icons/bitcoin"), tr("&About MintCoin"), this);
-    aboutAction->setToolTip(tr("Show information about MintCoin"));
+    aboutAction->setStatusTip(tr("Show information about MintCoin"));
     aboutAction->setMenuRole(QAction::AboutRole);
     aboutQtAction = new QAction(QIcon(":/trolltech/qmessagebox/images/qtlogo-64.png"), tr("About &Qt"), this);
-    aboutQtAction->setToolTip(tr("Show information about Qt"));
+    aboutQtAction->setStatusTip(tr("Show information about Qt"));
     aboutQtAction->setMenuRole(QAction::AboutQtRole);
     optionsAction = new QAction(QIcon(":/icons/options"), tr("&Options..."), this);
-    optionsAction->setToolTip(tr("Modify configuration options for MintCoin"));
+    optionsAction->setStatusTip(tr("Modify configuration options for MintCoin"));
     optionsAction->setMenuRole(QAction::PreferencesRole);
     toggleHideAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Show / Hide"), this);
+    toggleHideAction->setStatusTip(tr("Show or hide the main Window"));
     encryptWalletAction = new QAction(QIcon(":/icons/lock_closed"), tr("&Encrypt Wallet..."), this);
-    encryptWalletAction->setToolTip(tr("Encrypt or decrypt wallet"));
+    encryptWalletAction->setStatusTip(tr("Encrypt the private keys that belong to your wallet"));
     encryptWalletAction->setCheckable(true);
     backupWalletAction = new QAction(QIcon(":/icons/filesave"), tr("&Backup Wallet..."), this);
-    backupWalletAction->setToolTip(tr("Backup wallet to another location"));
+    backupWalletAction->setStatusTip(tr("Backup wallet to another location"));
     repairWalletAction = new QAction(QIcon("icons/bitcoin"),tr("Repair &Wallet"),this);
-    repairWalletAction->setToolTip(tr("Repair an inacurate wallet"));
+    repairWalletAction->setStatusTip(tr("Repair an inacurate wallet"));
     changePassphraseAction = new QAction(QIcon(":/icons/key"), tr("&Change Passphrase..."), this);
-    changePassphraseAction->setToolTip(tr("Change the passphrase used for wallet encryption"));
     lockWalletToggleAction = new QAction(this);
+    changePassphraseAction->setStatusTip(tr("Change the passphrase used for wallet encryption"));
     signMessageAction = new QAction(QIcon(":/icons/edit"), tr("Sign &message..."), this);
+    signMessageAction->setStatusTip(tr("Sign messages with your Mintcoin addresses to prove you own them"));
     verifyMessageAction = new QAction(QIcon(":/icons/transaction_0"), tr("&Verify message..."), this);
+    verifyMessageAction->setStatusTip(tr("Verify messages to ensure they were signed with specified Mintcoin addresses"));
 
     exportAction = new QAction(QIcon(":/icons/export"), tr("&Export..."), this);
-    exportAction->setToolTip(tr("Export the data in the current tab to a file"));
+    exportAction->setStatusTip(tr("Export the data in the current tab to a file"));
+    exportAction->setToolTip(exportAction->statusTip());
     openRPCConsoleAction = new QAction(QIcon(":/icons/debugwindow"), tr("&Debug window"), this);
-    openRPCConsoleAction->setToolTip(tr("Open debugging and diagnostic console"));
+    openRPCConsoleAction->setStatusTip(tr("Open debugging and diagnostic console"));
 
     connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
     connect(checkWalletAction, SIGNAL(triggered()), this, SLOT(checkWallet()));
@@ -397,7 +401,6 @@ void BitcoinGUI::createToolBars()
     toolbar->addAction(recurringSendAction);
     toolbar->addAction(historyAction);
     toolbar->addAction(addressBookAction);
-    toolbar->addAction(merchantAction);
 
     QToolBar *toolbar2 = addToolBar(tr("Actions toolbar"));
     toolbar2->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -422,7 +425,8 @@ void BitcoinGUI::setClientModel(ClientModel *clientModel)
 #endif
             if(trayIcon)
             {
-                trayIcon->setToolTip(tr("MintCoin client") + QString(" ") + tr("[testnet]"));
+                // Just attach " [testnet]" to the existing tooltip
+                trayIcon->setToolTip(trayIcon->toolTip() + QString(" ") + tr("[testnet]"));
                 trayIcon->setIcon(QIcon(":/icons/toolbar_testnet"));
                 toggleHideAction->setIcon(QIcon(":/icons/toolbar_testnet"));
             }
@@ -440,20 +444,11 @@ void BitcoinGUI::setClientModel(ClientModel *clientModel)
         // Report errors from network/worker thread
         connect(clientModel, SIGNAL(error(QString,QString,bool)), this, SLOT(error(QString,QString,bool)));
 
+        overviewPage->setClientModel(clientModel);
         rpcConsole->setClientModel(clientModel);
         addressBookPage->setOptionsModel(clientModel->getOptionsModel());
         receiveCoinsPage->setOptionsModel(clientModel->getOptionsModel());
         recurringSendPage->setOptionsModel(clientModel->getOptionsModel());
-
-        if(clientModel->getOptionsModel()->getShowShopDonate()==false)
-        {
-          merchantPage->setVisible(false);
-          merchantAction->setVisible(false);
-        }
-        else
-        {
-          merchantPage->loadPage();
-        }
     }
 }
 
@@ -467,8 +462,7 @@ void BitcoinGUI::setWalletModel(WalletModel *walletModel)
 
         // Put transaction list in tabs
         transactionView->setModel(walletModel);
-
-        overviewPage->setModel(walletModel);
+        overviewPage->setWalletModel(walletModel);
         addressBookPage->setModel(walletModel->getAddressTableModel());
         receiveCoinsPage->setModel(walletModel->getAddressTableModel());
         sendCoinsPage->setModel(walletModel);
@@ -591,6 +585,9 @@ void BitcoinGUI::setNumConnections(int count)
 
 void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
 {
+    // Prevent orphan statusbar messages (e.g. hover Quit in main menu, wait until chain-sync starts -> garbelled text)
+    statusBar()->clearMessage();
+
     // don't show / hide progress bar and its label if we have no connection to the network
     if (!clientModel || clientModel->getNumConnections() == 0)
     {
@@ -600,7 +597,6 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
         return;
     }
 
-    QString strStatusBarWarnings = clientModel->getStatusBarWarnings();
     QString tooltip;
 
     if(count < nTotalBlocks)
@@ -608,33 +604,21 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
         int nRemainingBlocks = nTotalBlocks - count;
         float nPercentageDone = count / (nTotalBlocks * 0.01f);
 
-        if (strStatusBarWarnings.isEmpty())
-        {
-            progressBarLabel->setText(tr("Synchronizing with network..."));
-            progressBarLabel->setVisible(true);
-            progressBar->setFormat(tr("~%n block(s) remaining", "", nRemainingBlocks));
-            progressBar->setMaximum(nTotalBlocks);
-            progressBar->setValue(count);
-            progressBar->setVisible(true);
-        }
+        progressBarLabel->setText(tr("Synchronizing with network..."));
+        progressBarLabel->setVisible(true);
+        progressBar->setFormat(tr("~%n block(s) remaining", "", nRemainingBlocks));
+        progressBar->setMaximum(nTotalBlocks);
+        progressBar->setValue(count);
+        progressBar->setVisible(true);
 
         tooltip = tr("Downloaded %1 of %2 blocks of transaction history (%3% done).").arg(count).arg(nTotalBlocks).arg(nPercentageDone, 0, 'f', 2);
     }
     else
     {
-        if (strStatusBarWarnings.isEmpty())
-            progressBarLabel->setVisible(false);
+        progressBarLabel->setVisible(false);
 
         progressBar->setVisible(false);
         tooltip = tr("Downloaded %1 blocks of transaction history.").arg(count);
-    }
-
-    // Override progressBarLabel text and hide progress bar, when we have warnings to display
-    if (!strStatusBarWarnings.isEmpty())
-    {
-        progressBarLabel->setText(strStatusBarWarnings);
-        progressBarLabel->setVisible(true);
-        progressBar->setVisible(false);
     }
 
     tooltip = tr("Current difficulty is %1.").arg(clientModel->GetDifficulty()) + QString("<br>") + tooltip;
@@ -827,15 +811,6 @@ void BitcoinGUI::gotoRecurringSendPage()
     disconnect(exportAction, SIGNAL(triggered()), 0, 0);
 }
 
-void BitcoinGUI::gotoMerchantPage()
-{
-    merchantAction->setChecked(true);
-    centralWidget->setCurrentWidget(merchantPage);
-
-    exportAction->setEnabled(false);
-    disconnect(exportAction, SIGNAL(triggered()), 0, 0);
-}
-
 void BitcoinGUI::gotoReceiveCoinsPage()
 {
     receiveCoinsAction->setChecked(true);
@@ -900,6 +875,18 @@ void BitcoinGUI::dropEvent(QDropEvent *event)
     }
 
     event->acceptProposedAction();
+}
+
+bool BitcoinGUI::eventFilter(QObject *object, QEvent *event)
+{
+    // Catch status tip events
+    if (event->type() == QEvent::StatusTip)
+    {
+        // Prevent adding text from setStatusTip(), if we currently use the status bar for displaying other stuff
+        if (progressBarLabel->isVisible() && progressBar->isVisible())
+            return true;
+    }
+    return QMainWindow::eventFilter(object, event);
 }
 
 void BitcoinGUI::handleURI(QString strURI)
@@ -1097,6 +1084,35 @@ void BitcoinGUI::toggleHidden()
     showNormalIfMinimized(true);
 }
 
+/*
+   Set the text to the approximate time. This is used in tool-tips.
+   We use the Qt tr() function so this is translated to the local language.
+
+   Note that the value returned is not really very good, since if the
+   time is (for example) 1 day and 23 hours we say "1 day". However the
+   tr() method used does not seem to have an easy way to do non-integer
+   values, so we will leave this for now.
+ */
+void BitcoinGUI::approximateTime(QString &text, uint64 nSeconds)
+{
+    if (nSeconds < 60)
+    {
+        text = tr("%n second(s)", "", nSeconds);
+    }
+    else if (nSeconds < 60*60)
+    {
+        text = tr("%n minute(s)", "", nSeconds/60);
+    }
+    else if (nSeconds < 24*60*60)
+    {
+        text = tr("%n hour(s)", "", nSeconds/(60*60));
+    }
+    else
+    {
+        text = tr("%n day(s)", "", nSeconds/(60*60*24));
+    }
+}
+
 void BitcoinGUI::updateMintingIcon()
 {
     if (pwalletMain && pwalletMain->IsLocked())
@@ -1116,7 +1132,9 @@ void BitcoinGUI::updateMintingIcon()
     }
     else if (!nWeight)
     {
-        labelMintingIcon->setToolTip(tr("Not minting because you don't have mature coins."));
+        QString text;
+        approximateTime(text, nSecondsUntilNextMint);
+        labelMintingIcon->setToolTip(tr("Not minting because you don't have mature coins.<br>Next coin matures in about %1.").arg(text));
         labelMintingIcon->setEnabled(false);
     }
     else if (nLastCoinStakeSearchInterval)
@@ -1124,23 +1142,7 @@ void BitcoinGUI::updateMintingIcon()
         uint64 nEstimateTime = nStakeTargetSpacing * nNetworkWeight / nWeight;
 
         QString text;
-        if (nEstimateTime < 60)
-        {
-            text = tr("%n second(s)", "", nEstimateTime);
-        }
-        else if (nEstimateTime < 60*60)
-        {
-            text = tr("%n minute(s)", "", nEstimateTime/60);
-        }
-        else if (nEstimateTime < 24*60*60)
-        {
-            text = tr("%n hour(s)", "", nEstimateTime/(60*60));
-        }
-        else
-        {
-            text = tr("%n day(s)", "", nEstimateTime/(60*60*24));
-        }
-
+        approximateTime(text, nEstimateTime);
         labelMintingIcon->setEnabled(true);
         labelMintingIcon->setToolTip(tr("Minting.<br>Your weight is %1.<br>Network weight is %2.<br>Expected time to earn reward is %3.").arg(nWeight).arg(nNetworkWeight).arg(text));
     }
@@ -1158,8 +1160,9 @@ void BitcoinGUI::updateMintingWeights()
     {
         nWeight = 0;
 
-        if (pwalletMain)
-            pwalletMain->GetStakeWeight(*pwalletMain, nMinMax, nMinMax, nWeight);
+        if (pwalletMain) {
+            pwalletMain->GetStakeWeight(*pwalletMain, nMinMax, nMinMax, nWeight, nSecondsUntilNextMint);
+        }
 
         nNetworkWeight = GetPoSKernelPS();
     }
